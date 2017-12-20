@@ -608,4 +608,177 @@ public class ExampleUnitTest {
         }
 
     }
+
+    @Test
+    public void rxRetry() {
+        final DisposableObserver<Double> disposableObserver = Observable.fromArray(1, 5, 7, 0, 2, 4).map(integer -> (double) (15 / integer)).retry(1).subscribeWith(new DisposableObserver<Double>() {
+            @Override
+            public void onNext(Double d) {
+                log("onError " + d);
+            }
+
+            @Override
+            public void onError(Throwable e) {
+                log("onError " + e.getMessage());
+            }
+
+            @Override
+            public void onComplete() {
+
+            }
+        });
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
+
+    @Test
+    public void rxOnError() {
+        final DisposableObserver<Double> disposableObserver = Observable.fromArray(1, 5, 7, 0, 2, 4)
+                .map(integer -> (double) (15 / integer))
+                .onErrorReturnItem(100.0)
+                .subscribeWith(new DisposableObserver<Double>() {
+                    @Override
+                    public void onNext(Double d) {
+                        log("onError " + d);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        log("onError " + e.getMessage());
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
+
+    @Test
+    public void rxZip() {
+        final DisposableObserver<Integer> disposableObserver = Observable.zip(Observable.fromArray("1", "2", "3"), Observable.fromArray(4, 5, 6), (s, integer) -> Integer.valueOf(s) + integer)
+                .subscribeWith(new DisposableObserver<Integer>() {
+                    @Override
+                    public void onNext(Integer integer) {
+                        log("onNext " + integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        log("onError " + e.getMessage());
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
+
+    @Test
+    public void rxZipDiferrentCount() {
+        final DisposableObserver<Integer> disposableObserver = Observable
+                .zip(Observable.fromArray("1", "2", "3"), Observable.fromArray(4, 5, 6, 7), (s, integer) -> Integer.valueOf(s) + integer)
+                .subscribeWith(new DisposableObserver<Integer>() {
+                    @Override
+                    public void onNext(Integer integer) {
+                        log("onNext " + integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        log("onError " + e.getMessage());
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        log("onCompleate");
+                    }
+                });
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
+    @Test
+    public void rxZipError() {
+        final DisposableObserver<String> disposableObserver = Observable
+                .zip(Observable.fromArray("1", "2", "3"), Observable.empty(),(s, o) -> s+o.toString())
+                .subscribeWith(new DisposableObserver<String>() {
+                    @Override
+                    public void onNext(String s) {
+                        log("onNext " + s);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        log("onError " + e.getMessage());
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        log("onCompleate");
+                    }
+                });
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
+
+    @Test
+    public void rxZipOnDifferentThreads() {
+        final DisposableObserver<Integer> disposableObserver = Observable
+                .zip(Observable.fromArray("1", "2", "3").map(s -> s+"1").doOnNext(s -> log(s)).subscribeOn(Schedulers.computation()),
+                        Observable.fromArray(4, 5, 6).map(integer -> integer*2).doOnNext(integer -> log(integer)).subscribeOn(Schedulers.computation()), (s, integer) -> Integer.valueOf(s) + integer)
+                .observeOn(Schedulers.newThread())
+                .subscribeWith(new DisposableObserver<Integer>() {
+                    @Override
+                    public void onNext(Integer integer) {
+                        log("onNext " + integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        log("onError " + e.getMessage());
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
 }
