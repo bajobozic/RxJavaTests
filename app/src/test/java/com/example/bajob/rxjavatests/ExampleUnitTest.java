@@ -1,11 +1,14 @@
 package com.example.bajob.rxjavatests;
 
+import android.os.SystemClock;
+
 import org.junit.Test;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 import io.reactivex.Observable;
@@ -49,6 +52,28 @@ public class ExampleUnitTest {
         return 123;
     }
 
+    private List<Integer> someLongWebServiceOperationThatReturnIntegerList() {
+        try {
+            log("long runnig list operation started");
+            log("Loading .");
+            Thread.sleep(250);
+            log("Loading ..");
+            Thread.sleep(250);
+            log("Loading ...");
+            Thread.sleep(250);
+            log("Loading ....");
+            Thread.sleep(250);
+            log("Loading .....");
+            Thread.sleep(250);
+            log("Loading ......");
+            Thread.sleep(250);
+            log("long runnig list operation finished");
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return Arrays.asList(1, 5, 2, 34, 3, 9, 87);
+    }
+
     private Observable<Integer> someLongOperationThatReturnObservable() {
         try {
             log("long runnig operation that return observable started");
@@ -58,6 +83,34 @@ public class ExampleUnitTest {
             e.printStackTrace();
         }
         return Observable.just(123456);
+    }
+
+    private Observable<Integer> someLongOperationThatReturnObservable(final Integer id) {
+        try {
+            Thread.sleep(300);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return Observable.just(123456*id).doOnSubscribe(disposable -> log("long runnig operation that return observable started"))
+                .doOnComplete(() ->log("long runnig operation that return observable finished"));
+    }
+    private Observable<Integer> someLongOperationThatReturnObservableConcurrent(final Integer id) {
+        try {
+            Thread.sleep(300);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return Observable.defer(() -> Observable.just(12345*id))
+                .doOnSubscribe(disposable -> log("long runnig operation that return observable started"))
+                .doOnComplete(() ->log("long runnig operation that return observable finished"))
+                .subscribeOn(Schedulers.computation());
+    }
+
+    private Observable<Integer> someLongOperationThatReturnObservableConcurrentDelay(final Integer id) {
+        return Observable.defer(() -> Observable.timer(10*id,TimeUnit.MILLISECONDS).map(aLong ->12345*id))
+                .doOnSubscribe(disposable -> log("long runnig operation that return observable started"))
+                .doOnComplete(() ->log("long runnig operation that return observable finished"))
+                .subscribeOn(Schedulers.computation());
     }
 
     @Test
@@ -667,6 +720,35 @@ public class ExampleUnitTest {
     }
 
     @Test
+    public void rxZipDiferrentCount() {
+        final DisposableObserver<Integer> disposableObserver = Observable
+                .zip(Observable.fromArray("1", "2", "3"), Observable.fromArray(4, 5, 6, 7), (s, integer) -> Integer.valueOf(s) + integer)
+                .subscribeWith(new DisposableObserver<Integer>() {
+                    @Override
+                    public void onNext(Integer integer) {
+                        log("onNext " + integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        log("onError " + e.getMessage());
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        log("onCompleate");
+                    }
+                });
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
+
+    @Test
     public void rxZip() {
         final DisposableObserver<Integer> disposableObserver = Observable.zip(Observable.fromArray("1", "2", "3"), Observable.fromArray(4, 5, 6), (s, integer) -> Integer.valueOf(s) + integer)
                 .subscribeWith(new DisposableObserver<Integer>() {
@@ -695,37 +777,9 @@ public class ExampleUnitTest {
     }
 
     @Test
-    public void rxZipDiferrentCount() {
-        final DisposableObserver<Integer> disposableObserver = Observable
-                .zip(Observable.fromArray("1", "2", "3"), Observable.fromArray(4, 5, 6, 7), (s, integer) -> Integer.valueOf(s) + integer)
-                .subscribeWith(new DisposableObserver<Integer>() {
-                    @Override
-                    public void onNext(Integer integer) {
-                        log("onNext " + integer);
-                    }
-
-                    @Override
-                    public void onError(Throwable e) {
-                        log("onError " + e.getMessage());
-                    }
-
-                    @Override
-                    public void onComplete() {
-                        log("onCompleate");
-                    }
-                });
-        try {
-            Thread.sleep(5000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } finally {
-            disposeObservable(disposableObserver);
-        }
-    }
-    @Test
     public void rxZipError() {
         final DisposableObserver<String> disposableObserver = Observable
-                .zip(Observable.fromArray("1", "2", "3"), Observable.empty(),(s, o) -> s+o.toString())
+                .zip(Observable.fromArray("1", "2", "3"), Observable.empty(), (s, o) -> s + o.toString())
                 .subscribeWith(new DisposableObserver<String>() {
                     @Override
                     public void onNext(String s) {
@@ -754,8 +808,8 @@ public class ExampleUnitTest {
     @Test
     public void rxZipOnDifferentThreads() {
         final DisposableObserver<Integer> disposableObserver = Observable
-                .zip(Observable.fromArray("1", "2", "3").map(s -> s+"1").doOnNext(s -> log(s)).subscribeOn(Schedulers.computation()),
-                        Observable.fromArray(4, 5, 6).map(integer -> integer*2).doOnNext(integer -> log(integer)).subscribeOn(Schedulers.computation()), (s, integer) -> Integer.valueOf(s) + integer)
+                .zip(Observable.fromArray("1", "2", "3").map(s -> s + "1").doOnNext(s -> log(s)).subscribeOn(Schedulers.computation()),
+                        Observable.fromArray(4, 5, 6).map(integer -> integer * 2).doOnNext(integer -> log(integer)).subscribeOn(Schedulers.computation()), (s, integer) -> Integer.valueOf(s) + integer)
                 .observeOn(Schedulers.newThread())
                 .subscribeWith(new DisposableObserver<Integer>() {
                     @Override
@@ -779,6 +833,320 @@ public class ExampleUnitTest {
             e.printStackTrace();
         } finally {
             disposeObservable(disposableObserver);
+        }
+    }
+
+    /**
+     * rxflatMap operator
+     */
+    @Test
+    public void rxflatMap1() {
+        final DisposableObserver<Integer> disposable = Observable.fromCallable(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                return someLongOperationThatReturnInteger();
+            }
+        }).repeat().take(2).subscribeWith(new DisposableObserver<Integer>() {
+                                              @Override
+                                              public void onNext(Integer o) {
+                                                  log("onNext " + o);
+                                              }
+
+                                              @Override
+                                              public void onError(Throwable e) {
+                                                  log("onError " + e.getMessage());
+                                              }
+
+                                              @Override
+                                              public void onComplete() {
+                                                  log("onCompleate");
+                                              }
+                                          }
+        );
+        disposeObservable(disposable);
+    }
+
+    @Test
+    public void rxflatMap2() {
+        final DisposableObserver<Integer> disposable = Observable.fromCallable(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                return someLongOperationThatReturnInteger();
+            }
+        }).subscribeOn(Schedulers.io()).repeat().take(2).subscribeWith(new DisposableObserver<Integer>() {
+                                                                           @Override
+                                                                           public void onNext(Integer o) {
+                                                                               log("onNext " + o);
+                                                                           }
+
+                                                                           @Override
+                                                                           public void onError(Throwable e) {
+                                                                               log("onError " + e.getMessage());
+                                                                           }
+
+                                                                           @Override
+                                                                           public void onComplete() {
+                                                                               log("onCompleate");
+                                                                           }
+                                                                       }
+        );
+        try {
+            Thread.sleep(7000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposable);
+        }
+    }
+
+    @Test
+    public void rxflatMap3() {
+        final DisposableObserver<Integer> disposable = Observable
+                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .flatMapIterable(integers -> integers)
+                .subscribeWith(new DisposableObserver<Integer>() {
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
+
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
+
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
+        disposeObservable(disposable);
+    }
+
+    @Test
+    public void rxflatMap4() {
+        final DisposableObserver<Integer> disposable = Observable
+                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .flatMapIterable(integers -> integers)
+                .subscribeOn(Schedulers.io())
+                .subscribeWith(new DisposableObserver<Integer>() {
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
+
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
+
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposable);
+        }
+    }
+    @Test
+    public void rxflatMap5() {
+        final DisposableObserver<Integer> disposable = Observable
+                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .flatMapIterable(integers -> integers)
+                .subscribeOn(Schedulers.io())
+                .subscribeWith(new DisposableObserver<Integer>() {
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
+
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
+
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
+        try {
+            Thread.sleep(7000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposable);
+        }
+    }
+
+    @Test
+    public void rxflatMap6() {
+        final DisposableObserver<Integer> disposable = Observable
+                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .flatMapIterable(integers -> integers)
+                .flatMap(integer -> someLongOperationThatReturnObservable(integer))
+                .subscribeWith(new DisposableObserver<Integer>() {
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
+
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
+
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
+//        try {
+//            Thread.sleep(7000);
+//        } catch (InterruptedException e) {
+//            e.printStackTrace();
+//        } finally {
+//        }
+        disposeObservable(disposable);
+    }
+
+    @Test
+    public void rxflatMap7() {
+        final DisposableObserver<Integer> disposable = Observable
+                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .flatMapIterable(integers -> integers)
+                .flatMap(integer -> someLongOperationThatReturnObservable(integer))
+                .subscribeOn(Schedulers.io())
+                .subscribeWith(new DisposableObserver<Integer>() {
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
+
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
+
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
+        try {
+            Thread.sleep(7000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposable);
+        }
+    }
+
+    @Test
+    public void rxflatMap8() {
+        final DisposableObserver<Integer> disposable = Observable
+                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .subscribeOn(Schedulers.io())
+                .flatMapIterable(integers -> integers)
+                .flatMap(integer -> someLongOperationThatReturnObservable(integer))
+                .subscribeWith(new DisposableObserver<Integer>() {
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
+
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
+
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
+        try {
+            Thread.sleep(7000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposable);
+        }
+    }
+    @Test
+    public void rxflatMap9() {
+        final DisposableObserver<Integer> disposable = Observable
+                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .subscribeOn(Schedulers.io())
+                .flatMapIterable(integers -> integers)
+                .flatMap(integer -> someLongOperationThatReturnObservableConcurrent(integer))
+                .subscribeWith(new DisposableObserver<Integer>() {
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
+
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
+
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
+        try {
+            Thread.sleep(7000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposable);
+        }
+    }
+
+    @Test
+    public void rxflatMap10() {
+        final DisposableObserver<Integer> disposable = Observable
+                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .subscribeOn(Schedulers.io())
+                .flatMapIterable(integers -> integers)
+                .flatMap(integer -> someLongOperationThatReturnObservableConcurrentDelay(integer))
+                .subscribeWith(new DisposableObserver<Integer>() {
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
+
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
+
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
+        try {
+            Thread.sleep(7000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposable);
         }
     }
 }
