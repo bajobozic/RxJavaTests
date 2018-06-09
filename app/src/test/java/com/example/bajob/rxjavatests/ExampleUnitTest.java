@@ -1,7 +1,5 @@
 package com.example.bajob.rxjavatests;
 
-import android.os.SystemClock;
-
 import org.junit.Test;
 
 import java.io.Serializable;
@@ -12,7 +10,10 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 import io.reactivex.Observable;
+import io.reactivex.disposables.Disposable;
 import io.reactivex.internal.schedulers.IoScheduler;
+import io.reactivex.internal.util.ConnectConsumer;
+import io.reactivex.observables.ConnectableObservable;
 import io.reactivex.observers.DisposableObserver;
 import io.reactivex.schedulers.Schedulers;
 
@@ -91,25 +92,26 @@ public class ExampleUnitTest {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        return Observable.just(123456*id).doOnSubscribe(disposable -> log("long runnig operation that return observable started"))
-                .doOnComplete(() ->log("long runnig operation that return observable finished"));
+        return Observable.just(123456 * id).doOnSubscribe(disposable -> log("long runnig operation that return observable started"))
+                .doOnComplete(() -> log("long runnig operation that return observable finished"));
     }
+
     private Observable<Integer> someLongOperationThatReturnObservableConcurrent(final Integer id) {
         try {
             Thread.sleep(300);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        return Observable.defer(() -> Observable.just(12345*id))
+        return Observable.defer(() -> Observable.just(12345 * id))
                 .doOnSubscribe(disposable -> log("long runnig operation that return observable started"))
-                .doOnComplete(() ->log("long runnig operation that return observable finished"))
+                .doOnComplete(() -> log("long runnig operation that return observable finished"))
                 .subscribeOn(Schedulers.computation());
     }
 
     private Observable<Integer> someLongOperationThatReturnObservableConcurrentDelay(final Integer id) {
-        return Observable.defer(() -> Observable.timer(10*id,TimeUnit.MILLISECONDS).map(aLong ->12345*id))
+        return Observable.defer(() -> Observable.timer(10 * id, TimeUnit.MILLISECONDS).map(aLong -> 12345 * id))
                 .doOnSubscribe(disposable -> log("long runnig operation that return observable started"))
-                .doOnComplete(() ->log("long runnig operation that return observable finished"))
+                .doOnComplete(() -> log("long runnig operation that return observable finished"))
                 .subscribeOn(Schedulers.computation());
     }
 
@@ -955,6 +957,7 @@ public class ExampleUnitTest {
             disposeObservable(disposable);
         }
     }
+
     @Test
     public void rxflatMap5() {
         final DisposableObserver<Integer> disposable = Observable
@@ -1084,6 +1087,7 @@ public class ExampleUnitTest {
             disposeObservable(disposable);
         }
     }
+
     @Test
     public void rxflatMap9() {
         final DisposableObserver<Integer> disposable = Observable
@@ -1149,4 +1153,132 @@ public class ExampleUnitTest {
             disposeObservable(disposable);
         }
     }
+
+
+    @Test
+    public void rxJavaConcatAvailability() {
+        final DisposableObserver<String> disposableObserver = Observable
+                .concat(Observable.timer(5, TimeUnit.MILLISECONDS)
+                                .map(aLong -> "FIRST")
+                        ,
+                        Observable
+                                .timer(4500, TimeUnit.MILLISECONDS)
+                                .map(aLong -> "SECOND"))
+                .subscribeWith(new DisposableObserver<String>() {
+                    @Override
+                    public void onNext(String s) {
+                        log("onNext " + s);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
+
+    @Test
+    public void rxJavaConcatConnectableObservable() {
+        final ConnectableObservable<Long> sharedObservable = Observable.interval(1000, TimeUnit.MILLISECONDS).publish();
+        final DisposableObserver<String> disposableObserver1 = Observable.concat(
+                //interesting effect,subscription on outer concat observable is immediate
+                //but shared(Connectable)observable subscription is delayed till connect is called
+                //so there is no emission of events
+                Observable.just("this is immediatelyemittedd"),
+                sharedObservable
+                        .take(1)
+                        .map(aLong -> aLong + "-" + Thread.currentThread().getName())
+                , sharedObservable
+                        .take(6)
+                        .concatMapEager(aLong -> Observable.just(aLong).map(aLong1 -> aLong1 + "-" + Thread.currentThread().getName())
+                                .subscribeOn(Schedulers.computation()))
+        )
+                .observeOn(Schedulers.newThread())
+                .subscribeWith(new DisposableObserver<String>() {
+                    @Override
+                    public void onNext(String aLong) {
+                        log(aLong);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        final Disposable disposable = sharedObservable.connect();
+
+
+        try {
+            Thread.sleep(8000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver1);
+            disposable.dispose();
+        }
+    }
+
+    @Test
+    public void rxJavaConcatPublish() {
+        final DisposableObserver<String> disposableObserver = Observable
+                .interval(1000, TimeUnit.MILLISECONDS)
+                .publish(longObservable -> Observable.concat(
+                        longObservable
+                                .take(1)
+                                .map(aLong -> aLong + "-" + Thread.currentThread().getName()),
+                        longObservable
+                                //.delay(2000,TimeUnit.MILLISECONDS)//this is added just to be sure that delay don't change anything
+                                .take(6)
+                                .concatMapEager(aLong -> Observable.just(aLong).map(aLong1 -> aLong1 + "-" + Thread.currentThread().getName()).subscribeOn(Schedulers.newThread()))))//newThread() spit tread for every computation
+//                              .concatMapEager(aLong -> Observable.just(aLong).map(aLong1 -> aLong1 + "-" + Thread.currentThread().getName()).subscribeOn(Schedulers.io()))))//io() spit tread for every computation, so be careful when using inside xxxMap() operators
+//                              .concatMapEager(aLong -> Observable.just(aLong).map(aLong1 -> aLong1 + "-" + Thread.currentThread().getName()).subscribeOn(Schedulers.computation()))))//computation calculate number of cores internally and allocate appropriate number of thread that are <= numCores
+                .observeOn(Schedulers.newThread())
+                .subscribeWith(new DisposableObserver<String>() {
+                    @Override
+                    public void onNext(String s) {
+                        log(s);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+
+        try {
+            Thread.sleep(12000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+        }
+    }
+
 }
