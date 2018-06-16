@@ -10,7 +10,9 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 import io.reactivex.Observable;
+import io.reactivex.ObservableSource;
 import io.reactivex.disposables.Disposable;
+import io.reactivex.functions.Function;
 import io.reactivex.internal.schedulers.IoScheduler;
 import io.reactivex.observables.ConnectableObservable;
 import io.reactivex.observers.DisposableObserver;
@@ -1239,6 +1241,11 @@ public class ExampleUnitTest {
         }
     }
 
+    /**
+     * this can be more elegant solution to WA precipitation problem
+     * for downloading first image with full bandwidth
+     * and then continue with rest in paralele
+     */
     @Test
     public void rxJavaConcatPublish() {
         final DisposableObserver<String> disposableObserver = Observable
@@ -1279,5 +1286,166 @@ public class ExampleUnitTest {
             disposeObservable(disposableObserver);
         }
     }
+
+    /**
+     * work in progress
+     */
+    @Test
+    public void testReplay() {
+        final Observable<Long> longObservable = Observable.just(1L, 2L, 3L, 4L).replay(1).refCount();
+        final DisposableObserver<Long> disposableObserver = longObservable.subscribeWith(new DisposableObserver<Long>() {
+            @Override
+            public void onNext(Long integer) {
+                log(integer);
+            }
+
+            @Override
+            public void onError(Throwable e) {
+
+            }
+
+            @Override
+            public void onComplete() {
+
+            }
+        });
+
+        //sleep for 2 sec and subscribe again
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+
+        final DisposableObserver<Long> disposableObserver1 = longObservable.subscribeWith(new DisposableObserver<Long>() {
+            @Override
+            public void onNext(Long integer) {
+                log(integer);
+            }
+
+            @Override
+            public void onError(Throwable e) {
+
+            }
+
+            @Override
+            public void onComplete() {
+
+            }
+        });
+        //wait for rxjava to finish
+        try {
+            Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+            disposeObservable(disposableObserver1);
+
+        }
+
+    }
+
+    /**
+     * this test is still in progres
+     * not working as expected
+     */
+    @Test
+    public void testRetryWhen() {
+        final DisposableObserver<Object> disposableObserver = Observable.fromCallable(() -> {
+            log("Loading ...");
+            Thread.sleep(2000);
+            throw new NoSuchFieldException();
+        }).retryWhen(throwableFlowable -> (ObservableSource<?>) Observable.zip(throwableFlowable, Observable.range(1, 2),
+                (throwable, u) ->
+                        u)
+                .flatMap(u -> {
+                    if (u < 2) {
+                        return Observable.just(u);
+                    } else {
+                        return Observable.error(new Throwable("Error"));
+                    }
+                })).subscribeWith(new DisposableObserver<Object>() {
+            @Override
+            public void onNext(Object o) {
+                log(o.toString());
+            }
+
+            @Override
+            public void onError(Throwable e) {
+                log(e.getMessage());
+            }
+
+            @Override
+            public void onComplete() {
+                log("Compleated");
+            }
+        });
+        disposeObservable(disposableObserver);
+    }
+
+    class SessionTokenExpieredException extends RuntimeException {
+        @Override
+        public String getMessage() {
+            return "Session token expiered";
+        }
+
+        @Override
+        public String getLocalizedMessage() {
+            return "Session token expiered";
+        }
+    }
+
+    private static final int NUM_RETRYS_COUNT = 1;
+
+    private static ObservableSource<?> retryOneTime(Observable<Throwable> throwableObservable) {
+        return throwableObservable
+                .flatMap(new Function<Throwable, ObservableSource<?>>() {
+                    int count = 0;
+
+                    @Override
+                    public ObservableSource<?> apply(Throwable throwable) throws Exception {
+                        if (count++ < NUM_RETRYS_COUNT && throwable instanceof SessionTokenExpieredException) {
+                            //here we can hit refresh token WS call and retry api call againg
+                            //with new token
+                            return Observable.just(count);
+                        }
+                        return Observable.error(throwable);
+                    }
+                });
+    }
+
+    /**
+     * This is right way to
+     * retry and can be used to refres token and continue
+     * with ongoing api call that failed because
+     * of session token expiration
+     */
+    @Test
+    public void testRetryWhenSecondAttempt() {
+        final DisposableObserver<Object> disposableObserver = Observable.fromCallable(() -> {
+            log("Loading data from server ...");
+            Thread.sleep(2000);
+            throw new SessionTokenExpieredException();
+        }).retryWhen(ExampleUnitTest::retryOneTime).subscribeWith(new DisposableObserver<Object>() {
+            @Override
+            public void onNext(Object o) {
+                log(o);
+            }
+
+            @Override
+            public void onError(Throwable e) {
+                log(e);
+            }
+
+            @Override
+            public void onComplete() {
+                log("Compleated");
+            }
+        });
+        disposeObservable(disposableObserver);
+    }
+
 
 }
