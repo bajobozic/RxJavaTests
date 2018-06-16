@@ -1,5 +1,7 @@
 package com.example.bajob.rxjavatests;
 
+import com.jakewharton.rx.ReplayingShare;
+
 import org.junit.Test;
 
 import java.io.Serializable;
@@ -11,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 
 import io.reactivex.Observable;
 import io.reactivex.ObservableSource;
+import io.reactivex.Single;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.functions.Function;
 import io.reactivex.internal.schedulers.IoScheduler;
@@ -1092,10 +1095,10 @@ public class ExampleUnitTest {
     @Test
     public void rxflatMap9() {
         final DisposableObserver<Integer> disposable = Observable
-                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .fromCallable(this::someLongWebServiceOperationThatReturnIntegerList)
                 .subscribeOn(Schedulers.io())
                 .flatMapIterable(integers -> integers)
-                .flatMap(integer -> someLongOperationThatReturnObservableConcurrent(integer))
+                .flatMap(this::someLongOperationThatReturnObservableConcurrent)
                 .subscribeWith(new DisposableObserver<Integer>() {
                                    @Override
                                    public void onNext(Integer o) {
@@ -1125,10 +1128,10 @@ public class ExampleUnitTest {
     @Test
     public void rxflatMap10() {
         final DisposableObserver<Integer> disposable = Observable
-                .fromCallable(() -> someLongWebServiceOperationThatReturnIntegerList())
+                .fromCallable(this::someLongWebServiceOperationThatReturnIntegerList)
                 .subscribeOn(Schedulers.io())
                 .flatMapIterable(integers -> integers)
-                .flatMap(integer -> someLongOperationThatReturnObservableConcurrentDelay(integer))
+                .flatMap(this::someLongOperationThatReturnObservableConcurrentDelay)
                 .subscribeWith(new DisposableObserver<Integer>() {
                                    @Override
                                    public void onNext(Integer o) {
@@ -1244,7 +1247,8 @@ public class ExampleUnitTest {
     /**
      * this can be more elegant solution to WA precipitation problem
      * for downloading first image with full bandwidth
-     * and then continue with rest in paralele
+     * and then continue with rest in parallel
+     * after first is finished
      */
     @Test
     public void rxJavaConcatPublish() {
@@ -1291,9 +1295,19 @@ public class ExampleUnitTest {
      * work in progress
      */
     @Test
-    public void testReplay() {
-        final Observable<Long> longObservable = Observable.just(1L, 2L, 3L, 4L).replay(1).refCount();
-        final DisposableObserver<Long> disposableObserver = longObservable.subscribeWith(new DisposableObserver<Long>() {
+    public void testPublishRefCount() {
+        final Observable<Long> longObservable = Observable.interval(1, TimeUnit.SECONDS).take(4).publish().refCount();
+//        final Observable<Long> longObservable = Observable.create(new ObservableOnSubscribe<Long>() {
+//            @Override
+//            public void subscribe(ObservableEmitter<Long> e) throws Exception {
+//                e.onNext(1L);
+//                e.onNext(2L);
+//                e.onNext(3L);
+//                e.onNext(4L);
+//                e.onComplete();
+//            }
+//        }).replay(1).refCount();
+        final DisposableObserver<Long> disposableObserver = longObservable.subscribeOn(Schedulers.newThread()).doOnSubscribe(disposable -> log("First subscribed")).subscribeWith(new DisposableObserver<Long>() {
             @Override
             public void onNext(Long integer) {
                 log(integer);
@@ -1312,13 +1326,13 @@ public class ExampleUnitTest {
 
         //sleep for 2 sec and subscribe again
         try {
-            Thread.sleep(3000);
+            Thread.sleep(2500);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
 
-        final DisposableObserver<Long> disposableObserver1 = longObservable.subscribeWith(new DisposableObserver<Long>() {
+        final DisposableObserver<Long> disposableObserver1 = longObservable.subscribeOn(Schedulers.newThread()).doOnSubscribe(disposable -> log("Second subscribed")).subscribeWith(new DisposableObserver<Long>() {
             @Override
             public void onNext(Long integer) {
                 log(integer);
@@ -1348,8 +1362,80 @@ public class ExampleUnitTest {
     }
 
     /**
-     * this test is still in progres
+     * work in progress
+     */
+    @Test
+    public void testReplay() {
+        final Observable<Long> longObservable = Observable.interval(1, TimeUnit.SECONDS).take(4).replay(1).refCount();
+//        final Observable<Long> longObservable = Observable.create(new ObservableOnSubscribe<Long>() {
+//            @Override
+//            public void subscribe(ObservableEmitter<Long> e) throws Exception {
+//                e.onNext(1L);
+//                e.onNext(2L);
+//                e.onNext(3L);
+//                e.onNext(4L);
+//                e.onComplete();
+//            }
+//        }).replay(1).refCount();
+        final DisposableObserver<Long> disposableObserver = longObservable.subscribeOn(Schedulers.newThread()).doOnSubscribe(disposable -> log("First subscribed")).subscribeWith(new DisposableObserver<Long>() {
+            @Override
+            public void onNext(Long integer) {
+                log(integer);
+            }
+
+            @Override
+            public void onError(Throwable e) {
+
+            }
+
+            @Override
+            public void onComplete() {
+
+            }
+        });
+
+        //sleep for 2 sec and subscribe again
+        try {
+            Thread.sleep(2500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+
+        final DisposableObserver<Long> disposableObserver1 = longObservable.subscribeOn(Schedulers.newThread()).doOnSubscribe(disposable -> log("Second subscribed")).subscribeWith(new DisposableObserver<Long>() {
+            @Override
+            public void onNext(Long integer) {
+                log(integer);
+            }
+
+            @Override
+            public void onError(Throwable e) {
+
+            }
+
+            @Override
+            public void onComplete() {
+
+            }
+        });
+        //wait for rxjava to finish
+        try {
+            Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+            disposeObservable(disposableObserver1);
+
+        }
+
+    }
+
+    /**
+     * this test is still in progress
      * not working as expected
+     * BROKEN IMPLEMENTATION
+     * ignore for now
      */
     @Test
     public void testRetryWhen() {
@@ -1418,7 +1504,7 @@ public class ExampleUnitTest {
 
     /**
      * This is right way to
-     * retry and can be used to refres token and continue
+     * retry and can be used to refresh token and continue
      * with ongoing api call that failed because
      * of session token expiration
      */
@@ -1427,25 +1513,267 @@ public class ExampleUnitTest {
         final DisposableObserver<Object> disposableObserver = Observable.fromCallable(() -> {
             log("Loading data from server ...");
             Thread.sleep(2000);
+            //throw exception on purpose here
+            //to simulate token expiration
             throw new SessionTokenExpieredException();
-        }).retryWhen(ExampleUnitTest::retryOneTime).subscribeWith(new DisposableObserver<Object>() {
-            @Override
-            public void onNext(Object o) {
-                log(o);
-            }
+        })
+                //.map(response -> {//check here in case webservice returns expiration token
+                // inside successful response
+                //in that case delete above throw expression
+                // throw exception from here like this
+                // Exception.propagate(throw new SessionTokenExpieredException());})
+                .retryWhen(ExampleUnitTest::retryOneTime)
+                .subscribeWith(new DisposableObserver<Object>() {
+                    @Override
+                    public void onNext(Object o) {
+                        log(o);
+                    }
 
-            @Override
-            public void onError(Throwable e) {
-                log(e);
-            }
+                    @Override
+                    public void onError(Throwable e) {
+                        log(e);
+                    }
 
-            @Override
-            public void onComplete() {
-                log("Compleated");
-            }
-        });
+                    @Override
+                    public void onComplete() {
+                        log("Compleated");
+                    }
+                });
         disposeObservable(disposableObserver);
     }
 
 
+    /**
+     *
+     */
+    @Test
+    public void testPublishRefCountCallable() {
+        final Observable<Long> longObservable = longRunningWsOrComputation()
+                .publish()
+                .refCount();
+        final DisposableObserver<Long> disposableObserver = longObservable
+                .subscribeOn(Schedulers.newThread())
+                .doOnSubscribe(disposable -> log("First subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+
+        //sleep for 2 sec and subscribe again
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+
+        final DisposableObserver<Long> disposableObserver1 = longObservable
+                .subscribeOn(Schedulers.newThread())
+                .doOnSubscribe(disposable -> log("Second subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        //wait for rxjava to finish
+        try {
+            Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+            disposeObservable(disposableObserver1);
+
+        }
+
+    }
+
+    private Observable<Long> longRunningWsOrComputation() {
+        return Observable.fromCallable(() -> {
+            log("Loading...");
+            Thread.sleep(2000);
+            return 100L;
+        });
+    }
+
+    private Single<Long> longRunningWsOrComputationSingle() {
+        return Single.fromCallable(() -> {
+            log("Loading...");
+            Thread.sleep(2000);
+            return 100L;
+        });
+    }
+
+    /**
+     *
+     */
+    @Test
+    public void testReplayCallable() {
+        final Observable<Long> longObservable = longRunningWsOrComputation()
+                .replay(1)
+                .refCount();
+        final DisposableObserver<Long> disposableObserver = longObservable
+                .subscribeOn(Schedulers.newThread())
+                .doOnSubscribe(disposable -> log("First subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+
+        //sleep for 2 sec and subscribe again
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+
+        final DisposableObserver<Long> disposableObserver1 = longObservable
+                .subscribeOn(Schedulers.newThread())
+                .doOnSubscribe(disposable -> log("Second subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        //wait for rxjava to finish
+        try {
+            Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver);
+            disposeObservable(disposableObserver1);
+
+        }
+
+    }
+
+    /**
+     * Interesting case for sharing result using ReplayingShare()
+     * library for the same operation
+     * that is called from different part of app in no
+     * particular order across app with only one
+     * execution of expensive operation
+     * applicable to Observable and Flowablle
+     */
+    @Test
+    public void testReplayingShare() {
+        //this is app level variable(sort of singleton)
+        final Observable<Long> longObservable = longRunningWsOrComputation()
+                .compose(ReplayingShare.instance());
+
+        //this is called from different parts of app
+        final DisposableObserver<Long> disposableObserver = longObservable
+                .take(1)//important part to skip computation after first subscriber
+                .subscribeOn(Schedulers.newThread())
+                .doOnSubscribe(disposable -> log("First subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+
+        //sleep for 2 sec so that first observable is completed(finished)
+        //and after that subscribe again in different part of app
+        //we will get cached result of first call and slow operation is not
+        //called again
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        //dispose(unsubscribe) from first observable
+        disposeObservable(disposableObserver);
+
+        //this is called from different parts of app
+        //now we call it again,in this case we will get cached result
+        //long operation is skipped
+        final DisposableObserver<Long> disposableObserver1 = longObservable
+                .take(1)//important part to skip computation after first subscriber
+                .subscribeOn(Schedulers.newThread())
+                .doOnSubscribe(disposable -> log("Second subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        //wait for rxjava to finish
+        try {
+            Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver1);
+        }
+
+    }
 }
