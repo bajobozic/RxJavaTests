@@ -10,6 +10,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.reactivex.Observable;
 import io.reactivex.ObservableSource;
@@ -1502,6 +1504,24 @@ public class ExampleUnitTest {
                 });
     }
 
+    private static ObservableSource<?> retryOneTimeModified(Observable<Throwable> throwableObservable, AtomicInteger integer) {
+        return throwableObservable
+                .flatMap(new Function<Throwable, ObservableSource<?>>() {
+                    int count = 0;
+
+                    @Override
+                    public ObservableSource<?> apply(Throwable throwable) throws Exception {
+                        if (count++ < NUM_RETRYS_COUNT && throwable instanceof SessionTokenExpieredException) {
+                            //here we can hit refresh token WS call and retry api call againg
+                            //with new token
+                            integer.incrementAndGet();
+                            return Observable.just(count);
+                        }
+                        return Observable.error(throwable);
+                    }
+                });
+    }
+
     /**
      * This is right way to
      * retry and can be used to refresh token and continue
@@ -1696,12 +1716,236 @@ public class ExampleUnitTest {
     }
 
     /**
+     * Test that show using auto connect in combination with replay
+     * When first observable finish and unsubscribe and second
+     * connect we get last value that is emitted
+     * In case of auto connect we need to save reference to disposable
+     * so we can release in the end
+     */
+
+    @Test
+    public void testReplayAutoconnect() {
+        //wraper for waribale that we access inside
+        //lambda(anonymous class) that should be final
+        AtomicReference<Disposable> topDisposable = new AtomicReference<>();
+        final Observable<Long> longObservable = Observable.just(1L, 2L, 3L, 4L, 5L)
+                .replay(1)
+                .autoConnect(1, topDisposable::set);
+        final DisposableObserver<Long> disposableObserver = longObservable
+                .doOnSubscribe(disposable -> log("First subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+
+        //sleep for 2 sec and subscribe again
+        //in this case this is not necessarry
+        //because all operation are on the same thread
+        //so there are executed sequentialy
+        //but we do it here just for reference
+        //commenting below part of code will not
+        //change anything
+//        try {
+//            Thread.sleep(1500);
+//        } catch (InterruptedException e) {
+//            e.printStackTrace();
+//        }
+
+
+        final DisposableObserver<Long> disposableObserver1 = longObservable
+                .doOnSubscribe(disposable -> log("Second subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        disposeObservable(disposableObserver);
+        disposeObservable(disposableObserver1);
+        topDisposable.get().dispose();
+    }
+
+    /**
+     * In this case we simulate long running
+     * WS call,after call finish first observable
+     * unsubscribe,then second connect after some
+     * time,maybe even from another part of app
+     * we emit last response without
+     * executing again expensive WS call
+     * (or other type of long running operation)
+     */
+
+    @Test
+    public void testReplayAutoconnectCallabell() {
+        AtomicReference<Disposable> disposableAtomicReference = new AtomicReference<>();
+        final Observable<Integer> integerObservable = Observable.fromCallable(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                log("Loading WS data...");
+                Thread.sleep(2500);
+                return 42;
+            }
+        })
+                .replay(1)
+                .autoConnect(1, disposableAtomicReference::set);
+
+        final DisposableObserver<Integer> first_subscribed = integerObservable
+                .doOnSubscribe(disposable -> log("First subscribed"))
+                .subscribeWith(new DisposableObserver<Integer>() {
+                    @Override
+                    public void onNext(Integer integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        final DisposableObserver<Integer> second_subscribed = integerObservable
+                .doOnSubscribe(disposable -> log("Second subscribed"))
+                .subscribeWith(new DisposableObserver<Integer>() {
+                    @Override
+                    public void onNext(Integer integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+
+        disposeObservable(first_subscribed);
+        disposeObservable(second_subscribed);
+        disposableAtomicReference.get().dispose();
+
+    }
+
+    /**
+     * Same as above but we reconnect againg
+     * after last emitted event is returned
+     * Can be used to draw UI with old data first
+     * and then refresh it with new when WS
+     * finish execution
+     */
+
+    @Test
+    public void testReplayingShareReconnect() {
+        //this should be some sort of global level variable(sort of singleton)
+        final Observable<Long> longObservable = longRunningWsOrComputation()
+                .compose(ReplayingShare.instance());
+
+        //this is called from different parts of app
+        final DisposableObserver<Long> disposableObserver = longObservable
+                .subscribeOn(Schedulers.newThread())
+                .doOnSubscribe(disposable -> log("First subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+
+        //sleep for 2 sec so that first observable is completed(finished)
+        //and after that subscribe again in different part of app
+        //we will get cached result of first call
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        //dispose(unsubscribe) from first observable
+        disposeObservable(disposableObserver);
+
+        //this is called from different parts of app
+        //now we call it again,in this case we will get cached result
+        //first and then we execute WS call again to get fresh data
+        final DisposableObserver<Long> disposableObserver1 = longObservable
+                .subscribeOn(Schedulers.newThread())
+                .doOnSubscribe(disposable -> log("Second subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        //wait for rxjava to finish
+        //or remove all subscribeOn()
+        //operator to get all calls on same tread
+        //executed sequentialy,in that
+        //case we can remove all  Thread.sleep() calls
+        try {
+            Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposeObservable(disposableObserver1);
+        }
+
+    }
+
+    /**
      * Interesting case for sharing result using ReplayingShare()
      * library for the same operation
      * that is called from different part of app in no
      * particular order across app with only one
      * execution of expensive operation
      * applicable to Observable and Flowablle
+     * This have same behavior as
+     * test @testReplayAutoconnect()
      */
     @Test
     public void testReplayingShare() {
@@ -1776,4 +2020,74 @@ public class ExampleUnitTest {
         }
 
     }
+
+    /**
+     * This is right way to
+     * retry and can be used to refresh token and continue
+     * with ongoing api call that failed because
+     * of session token expiration
+     * Here we simulate successful retrieval
+     * of refresh token and proceed normally
+     */
+    @Test
+    public void testRetryWhenSecondAttemptWithSuccess() {
+        AtomicInteger atomicInteger = new AtomicInteger(42);
+        final DisposableObserver<Object> disposableObserver = Observable.fromCallable(() -> {
+            log("Loading data from server ...");
+            Thread.sleep(2000);
+            //throw exception here
+            //to simulate token expiration
+            //if we are on initial api call
+            if (atomicInteger.get() == 42) {
+                log("Session token expiered");
+                throw new SessionTokenExpieredException();
+            }
+            log("Loading data succedeed afer token is refreshed");
+            log("Loaded data is");
+            return atomicInteger.get();
+        })
+                //.map(response -> {//check here in case webservice returns expiration token
+                // inside successful response
+                //in that case delete above throw expression
+                // throw exception from here like this
+                // Exception.propagate(throw new SessionTokenExpieredException());})
+                .retryWhen(throwableObservable -> throwableObservable
+                        .flatMap(new Function<Throwable, ObservableSource<?>>() {
+                            int count = 0;
+
+                            @Override
+                            public ObservableSource<?> apply(Throwable throwable) throws Exception {
+                                if (count++ < NUM_RETRYS_COUNT && throwable instanceof SessionTokenExpieredException) {
+                                    //here we can hit refresh token WS call and retry api call again
+                                    //with new token,in this case we modify external
+                                    //variable thah simulate refresh token
+                                    //it's not important wath we return here
+                                    //what is important is that if we need to retry
+                                    //WS call we need to return something but not error or completed event
+                                    return Observable.just(atomicInteger.incrementAndGet());
+                                }
+                                //in case we don't wont to retry again, just propagate error downstream
+                                return Observable.error(throwable);
+                            }
+                        }))
+                .subscribeWith(new DisposableObserver<Object>() {
+                    @Override
+                    public void onNext(Object o) {
+                        log(o);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        log(e);
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        log("Compleated");
+                    }
+                });
+        disposeObservable(disposableObserver);
+    }
+
+
 }
