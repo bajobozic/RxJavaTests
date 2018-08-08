@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import io.reactivex.Flowable;
 import io.reactivex.Observable;
 import io.reactivex.ObservableSource;
 import io.reactivex.Single;
@@ -2089,5 +2090,70 @@ public class ExampleUnitTest {
         disposeObservable(disposableObserver);
     }
 
+    /**
+     * Just testing thread change inside create method
+     */
+    @Test
+    public void testCreateBackgroundProccesing() {
+        final Disposable disposable = Observable.create(e -> {
+            try {
+                for (int i = 0; i < 6; i++) {
+                    if (e.isDisposed())
+                        break;
+                    e.onNext(i);
+                    log(i);
+                }
+                e.onComplete();
+            } catch (Exception e1) {
+                e.onError(e1);
+            }
+        }).subscribeOn(Schedulers.computation())
+                .observeOn(Schedulers.single())
+                .subscribe(o -> {
+                    log(o);
+                }, throwable -> log(throwable.getMessage()), () -> {
+                });
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+
+    }
+
+    /**
+     * Just testing flowable generate tread switching inside generate method
+     */
+    @Test
+    public void testFlowableGenerateBackgroundProccesing() {
+        final Disposable disposable = Flowable.generate(() -> new AtomicInteger(20), (integer, emitter) -> {
+            final int i = integer.decrementAndGet();
+            if (i > 0) {
+                emitter.onNext(integer.get());
+                log(i);
+            } else {
+                emitter.onComplete();
+            }
+        }).subscribeOn(Schedulers.newThread())
+                .observeOn(Schedulers.single())
+                .subscribe(o -> {
+                    log(o);
+                }, throwable -> {
+                    log(throwable.getMessage());
+                }, () -> {
+                    log("Compleated");
+                });
+
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+
+    }
 
 }
