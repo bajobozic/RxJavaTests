@@ -33,7 +33,9 @@ public class ExampleUnitTest {
     String hi = "Hello";
     String name = "Savo";
     String greattins = " Greattings";
-    final List<String> stringList = Arrays.asList(hi, name, greattins);
+    String greattinsNew = "New Greattings";
+    String greattinsOld = "Old Greattings";
+    final List<String> stringList = Arrays.asList(hi, name, greattins, greattinsNew, greattinsOld);
     final List<String> integerList = Arrays.asList("5", "4", "10");
     final List<Integer> intList = Arrays.asList(5, 4, 11, 2, 8);
 
@@ -2155,5 +2157,144 @@ public class ExampleUnitTest {
         }
 
     }
+
+    /**
+     * Combining observables with different type events
+     * and casting it usoing groupBy operator
+     */
+    @Test
+    public void testGroupBay() {
+        Observable<Object> stringObservable = Observable.fromIterable(stringList).cast(Object.class);
+        Observable<Object> integerObservable = Observable.fromIterable(intList).cast(Object.class);
+
+        final List<Object> objectList = Arrays.asList(hi, 5, name, greattins, 13, -1, greattinsNew, greattinsOld, 9);
+
+        Observable<Object> objectObservable = Observable.fromIterable(intList).cast(Object.class);
+        Disposable subscribe = stringObservable
+                .mergeWith(integerObservable)
+                .groupBy((Function<Object, Object>) o -> o.getClass())
+                .flatMapSingle(objectObjectGroupedObservable -> objectObjectGroupedObservable.toList())
+                .subscribe(objects -> log(objects), throwable -> log(throwable.getMessage()));
+
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            subscribe.dispose();
+        }
+    }
+
+    /**
+     * Combining observables with different type events
+     * and casting it usoing groupBy operator
+     */
+    @Test
+    public void testGroupBayNew() {
+        final List<Object> objectList = Arrays.asList(hi, 5, name, greattins, 13, -1, greattinsNew, greattinsOld, 9);
+
+        Observable<Object> objectObservable = Observable.fromIterable(objectList);
+        Disposable subscribe = objectObservable
+                .groupBy((Function<Object, Object>) o -> o.getClass())
+                .flatMapSingle(objectObjectGroupedObservable -> objectObjectGroupedObservable.toList())
+                .subscribe(objects -> log(objects), throwable -> log(throwable.getMessage()));
+
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            subscribe.dispose();
+        }
+    }
+
+    /**
+     * Combining observables with different type events
+     * and casting it usoing groupBy operator
+     */
+    @Test
+    public void testGroupByGenerated() {
+        Disposable subscribe = Observable.interval(250, TimeUnit.MILLISECONDS)
+                .take(20)
+                .map(aLong -> {
+                    if ((aLong % 2) == 0) return aLong;
+                    else return String.valueOf(aLong);
+                })
+                .cast(Object.class)
+                .groupBy((Function<Object, Object>) Object::getClass)
+                .flatMapSingle(Observable::toList)
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()));
+        try {
+            Thread.sleep(7000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            subscribe.dispose();
+        }
+    }
+
+    @Test
+    public void testTakeUntil() {
+        Disposable subscribe = Observable.just(1, 2, 5, -1, 4, 3, 67, 6, 98, 0)
+                .takeUntil(integer -> integer == 6)
+                .subscribe(integer -> log(integer), throwable -> log(throwable));
+
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            subscribe.dispose();
+        }
+    }
+
+    /**
+     * Way to switch observables on some event
+     * In this case start emiting from first and
+     * then when second observable start to emit
+     * stop and dispose first and proceed with second
+     */
+    @Test
+    public void testSwitchObservableWithShareAndTakeUntil() {
+        Observable<Long> firstObservable = Observable.interval(250, TimeUnit.MILLISECONDS);
+        Observable<Long> secondObservable = Observable.interval(1000, TimeUnit.MILLISECONDS).share();
+        Disposable disposable = secondObservable.mergeWith(firstObservable.takeUntil(secondObservable))
+                .observeOn(Schedulers.newThread())
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()));
+        try {
+            Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+    }
+
+    /**
+     * Way to switch observables on some event
+     * In this case start emiting from first and
+     * then when second observable start to emit
+     * stop and dispose first and proceed with second
+     * Suitable difference between above and this implementation
+     * look into test log result
+     */
+    @Test
+    public void testSwitchObservableUsingPublishAndTakeUntil() {
+        Observable<Long> firstObservable = Observable.interval(250, TimeUnit.MILLISECONDS);
+        Observable<Long> secondObservable = Observable.interval(1000, TimeUnit.MILLISECONDS);
+        Disposable disposable = secondObservable
+                .publish(longObservable -> Observable.merge(longObservable, firstObservable.takeUntil(longObservable)))
+//                .publish(longObservable -> longObservable.mergeWith(firstObservable.takeUntil(longObservable)))//equivalent to above expression
+                .observeOn(Schedulers.newThread())
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()));
+        try {
+            Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+    }
+
 
 }
