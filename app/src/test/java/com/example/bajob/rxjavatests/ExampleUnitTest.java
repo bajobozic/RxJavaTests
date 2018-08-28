@@ -852,12 +852,10 @@ public class ExampleUnitTest {
      */
     @Test
     public void rxflatMap1() {
-        final DisposableObserver<Integer> disposable = Observable.fromCallable(new Callable<Integer>() {
-            @Override
-            public Integer call() throws Exception {
-                return someLongOperationThatReturnInteger();
-            }
-        }).repeat().take(2).subscribeWith(new DisposableObserver<Integer>() {
+        final DisposableObserver<Integer> disposable = Observable.fromCallable(() -> someLongOperationThatReturnInteger())
+                .repeat()
+                .take(2)
+                .subscribeWith(new DisposableObserver<Integer>() {
                                               @Override
                                               public void onNext(Integer o) {
                                                   log("onNext " + o);
@@ -879,12 +877,11 @@ public class ExampleUnitTest {
 
     @Test
     public void rxflatMap2() {
-        final DisposableObserver<Integer> disposable = Observable.fromCallable(new Callable<Integer>() {
-            @Override
-            public Integer call() throws Exception {
-                return someLongOperationThatReturnInteger();
-            }
-        }).subscribeOn(Schedulers.io()).repeat().take(2).subscribeWith(new DisposableObserver<Integer>() {
+        final DisposableObserver<Integer> disposable = Observable.fromCallable(() -> someLongOperationThatReturnInteger())
+                .subscribeOn(Schedulers.io())
+                .repeat()
+                .take(2)
+                .subscribeWith(new DisposableObserver<Integer>() {
                                                                            @Override
                                                                            public void onNext(Integer o) {
                                                                                log("onNext " + o);
@@ -1728,7 +1725,7 @@ public class ExampleUnitTest {
 
     @Test
     public void testReplayAutoconnect() {
-        //wraper for waribale that we access inside
+        //wrapper for variable that we access inside
         //lambda(anonymous class) that should be final
         AtomicReference<Disposable> topDisposable = new AtomicReference<>();
         final Observable<Long> longObservable = Observable.just(1L, 2L, 3L, 4L, 5L)
@@ -1766,6 +1763,72 @@ public class ExampleUnitTest {
 //            e.printStackTrace();
 //        }
 
+        final DisposableObserver<Long> disposableObserver1 = longObservable
+                .doOnSubscribe(disposable -> log("Second subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+        disposeObservable(disposableObserver);
+        disposeObservable(disposableObserver1);
+        topDisposable.get().dispose();
+    }
+
+    /**
+     * Show difference between publish and replay
+     * on finite observable
+     */
+    @Test
+    public void testPublishAutoconnect() {
+        //wrapper for variable that we access inside
+        //lambda(anonymous class) that should be final
+        AtomicReference<Disposable> topDisposable = new AtomicReference<>();
+        final Observable<Long> longObservable = Observable.just(1L, 2L, 3L, 4L, 5L)
+                .publish()
+                .autoConnect(1, topDisposable::set);
+        final DisposableObserver<Long> disposableObserver = longObservable
+                .doOnSubscribe(disposable -> log("First subscribed"))
+                .subscribeWith(new DisposableObserver<Long>() {
+                    @Override
+                    public void onNext(Long integer) {
+                        log(integer);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+
+                    }
+
+                    @Override
+                    public void onComplete() {
+
+                    }
+                });
+
+        //sleep for 2 sec and subscribe again
+        //in this case this is not necessarry
+        //because all operation are on the same thread
+        //so there are executed sequentialy
+        //but we do it here just for reference
+        //commenting below part of code will not
+        //change anything
+//        try {
+//            Thread.sleep(1500);
+//        } catch (InterruptedException e) {
+//            e.printStackTrace();
+//        }
 
         final DisposableObserver<Long> disposableObserver1 = longObservable
                 .doOnSubscribe(disposable -> log("Second subscribed"))
@@ -2063,8 +2126,8 @@ public class ExampleUnitTest {
                                 if (count++ < NUM_RETRYS_COUNT && throwable instanceof SessionTokenExpieredException) {
                                     //here we can hit refresh token WS call and retry api call again
                                     //with new token,in this case we modify external
-                                    //variable thah simulate refresh token
-                                    //it's not important wath we return here
+                                    //variable that simulate refresh token
+                                    //it's not important what we return here
                                     //what is important is that if we need to retry
                                     //WS call we need to return something but not error or completed event
                                     return Observable.just(atomicInteger.incrementAndGet());
@@ -2101,7 +2164,7 @@ public class ExampleUnitTest {
             try {
                 for (int i = 0; i < 6; i++) {
                     if (e.isDisposed())
-                        break;
+                        return;
                     e.onNext(i);
                     log(i);
                 }
@@ -2187,7 +2250,7 @@ public class ExampleUnitTest {
 
     /**
      * Combining observables with different type events
-     * and casting it usoing groupBy operator
+     * and casting it using groupBy operator
      */
     @Test
     public void testGroupBayNew() {
@@ -2195,9 +2258,9 @@ public class ExampleUnitTest {
 
         Observable<Object> objectObservable = Observable.fromIterable(objectList);
         Disposable subscribe = objectObservable
-                .groupBy((Function<Object, Object>) o -> o.getClass())
-                .flatMapSingle(objectObjectGroupedObservable -> objectObjectGroupedObservable.toList())
-                .subscribe(objects -> log(objects), throwable -> log(throwable.getMessage()));
+                .groupBy((Function<Object, Object>) Object::getClass)
+                .flatMapSingle(Observable::toList)
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()));
 
         try {
             Thread.sleep(2000);
