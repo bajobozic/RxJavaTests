@@ -4,6 +4,7 @@ import com.jakewharton.rx.ReplayingShare;
 
 import org.junit.Test;
 
+import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -856,22 +857,22 @@ public class ExampleUnitTest {
                 .repeat()
                 .take(2)
                 .subscribeWith(new DisposableObserver<Integer>() {
-                                              @Override
-                                              public void onNext(Integer o) {
-                                                  log("onNext " + o);
-                                              }
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
 
-                                              @Override
-                                              public void onError(Throwable e) {
-                                                  log("onError " + e.getMessage());
-                                              }
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
 
-                                              @Override
-                                              public void onComplete() {
-                                                  log("onCompleate");
-                                              }
-                                          }
-        );
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
         disposeObservable(disposable);
     }
 
@@ -882,22 +883,22 @@ public class ExampleUnitTest {
                 .repeat()
                 .take(2)
                 .subscribeWith(new DisposableObserver<Integer>() {
-                                                                           @Override
-                                                                           public void onNext(Integer o) {
-                                                                               log("onNext " + o);
-                                                                           }
+                                   @Override
+                                   public void onNext(Integer o) {
+                                       log("onNext " + o);
+                                   }
 
-                                                                           @Override
-                                                                           public void onError(Throwable e) {
-                                                                               log("onError " + e.getMessage());
-                                                                           }
+                                   @Override
+                                   public void onError(Throwable e) {
+                                       log("onError " + e.getMessage());
+                                   }
 
-                                                                           @Override
-                                                                           public void onComplete() {
-                                                                               log("onCompleate");
-                                                                           }
-                                                                       }
-        );
+                                   @Override
+                                   public void onComplete() {
+                                       log("onCompleate");
+                                   }
+                               }
+                );
         try {
             Thread.sleep(7000);
         } catch (InterruptedException e) {
@@ -2352,6 +2353,133 @@ public class ExampleUnitTest {
                 .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()));
         try {
             Thread.sleep(4000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+    }
+
+    /**
+     * 3 methods of testing rxjava immutability
+     */
+    @Test
+    public void testStatefullObservables() {
+        AtomicInteger atomicInteger = new AtomicInteger(42);
+        Observable<Integer> integerObservable = Observable.just(atomicInteger.get());
+        integerObservable.subscribe(ExampleUnitTest::log);
+        atomicInteger.getAndIncrement();
+        integerObservable.subscribe(ExampleUnitTest::log);
+    }
+
+    @Test
+    public void testStatefullObservablesRightWay() {
+        AtomicInteger atomicInteger = new AtomicInteger(42);
+        Observable<Integer> integerObservable = Observable.fromCallable(() -> atomicInteger.get());
+        integerObservable.subscribe(ExampleUnitTest::log);
+        atomicInteger.getAndIncrement();
+        integerObservable.subscribe(ExampleUnitTest::log);
+    }
+
+    @Test
+    public void testStatefullObservablesFromOnservabl() {
+        AtomicInteger atomicInteger = new AtomicInteger(42);
+        Observable<Integer> integerObservable = Observable.defer(() -> Observable.just(atomicInteger.get()));
+        integerObservable.subscribe(ExampleUnitTest::log);
+        atomicInteger.getAndIncrement();
+        integerObservable.subscribe(ExampleUnitTest::log);
+    }
+
+    /**
+     * Example for periodic watching for
+     * changes inside Dir and showing
+     * only newly added files using interval
+     */
+    @Test
+    public void testPullBackWatchingDir() {
+        final String dirPath = "/Users/savo/Documents/";
+        final File dir = new File(dirPath);
+        Disposable disposable = Observable
+                .interval(1000, TimeUnit.MILLISECONDS)
+                .flatMap(ignored -> Observable.fromArray(dir.listFiles())
+                        .map(file -> file.getName()))
+                .distinct()
+                .subscribe(fileName -> {
+                            log(fileName);
+                        }
+                        , throwable -> {
+                            log(throwable.getMessage());
+                        });
+
+        try {
+            Thread.sleep(30000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+
+    }
+
+    @Test
+    public void testPullBackWatchingDirRemove() {
+        final String dirPath = "/Users/savo/Documents/";
+        final File dir = new File(dirPath);
+        Disposable disposable = Observable
+                .interval(1000, TimeUnit.MILLISECONDS)
+                .map(ignored -> dir.listFiles())
+                .distinctUntilChanged(files -> files.length)
+                .subscribe(files -> {
+                            log(files);
+                        }
+                        , throwable -> {
+                        });
+
+        try {
+            Thread.sleep(30000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+
+    }
+
+    /**
+     * Combined effect of changing something
+     * inside dir or adding and deleting with some advanced
+     * stream sharing
+     */
+    @Test
+    public void testAddRemoveAndChangeObsrvable() {
+        final String dirPath = "/Users/savo/Documents/";
+        final File dir = new File(dirPath);
+        Observable<File[]> sharedObservable = Observable
+                .interval(1000, TimeUnit.MILLISECONDS)
+                .map(ignored -> dir.listFiles());
+        //share above observable using publish operator
+        //usefully when we need to split stream in
+        //two or more streams and do different
+        //processing on each particular stream
+        //Only request is that streams must be merged(merge(),concat()...) to one in the end "
+        Disposable disposable = sharedObservable
+                .publish(object -> Observable
+                        .merge(object.distinctUntilChanged(files -> files.length)
+                                        .skip(1)
+                                , object.flatMap(ignored -> Observable.fromArray(dir.listFiles())
+                                        .map(file -> file.getName()))
+                                        .distinct())).subscribe(serializable -> {
+                    if (serializable instanceof String) {
+                        log(serializable);
+                    } else {
+                        log("File is removed or added to dir");
+                    }
+                }, throwable -> {
+                    log(throwable.getMessage());
+                });
+
+        try {
+            Thread.sleep(30000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         } finally {
