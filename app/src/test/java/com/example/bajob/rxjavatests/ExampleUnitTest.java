@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -31,6 +32,7 @@ import io.reactivex.schedulers.Schedulers;
  * @see <a href="http://d.android.com/tools/testing">Testing documentation</a>
  */
 public class ExampleUnitTest {
+    private final String completed = "Completed";
     String hi = "Hello";
     String name = "Savo";
     String greattins = " Greattings";
@@ -2486,6 +2488,43 @@ public class ExampleUnitTest {
             disposable.dispose();
         }
     }
+
+
+    /**
+     * Methode that switch between observables and repeat all sequencw when some external
+     * condition(for instance key pressed or mouse click) is executed
+     * This is advanced use of publish(),takeUntil() and repeatUntil() operators
+     */
+    @Test
+    public void testSwitchObservablesUsingPublishAndTakeUntilThenReplayAgain() {
+        AtomicBoolean stop = new AtomicBoolean(false);
+        AtomicInteger counter = new AtomicInteger(0);
+        Observable<Long> firstObservable = Observable.interval(250, TimeUnit.MILLISECONDS);
+        //just take firs 4 so we can repeat,this number can be some external condition that is changed
+        //for instance when key is pressed or mouse is clicked and in that case we can switch again to first source
+        Observable<Long> secondObservable = Observable.interval(500, TimeUnit.MILLISECONDS).map(aLong -> aLong * 100).take(4);
+        Disposable disposable = secondObservable
+                .publish(longObservable -> Observable.merge(longObservable, firstObservable.takeUntil(longObservable)))
+                .map(aLong -> changeCoditionForRepeat(stop, counter, aLong))
+                .repeatUntil(stop::get)
+                .observeOn(Schedulers.newThread())
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()), () -> log(completed));
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+    }
+
+    private Long changeCoditionForRepeat(AtomicBoolean stop, AtomicInteger counter, Long aLong) {
+        counter.getAndIncrement();
+        if (counter.get() >= 20)
+            stop.getAndSet(true);
+        return aLong;
+    }
+
 
 
 }
