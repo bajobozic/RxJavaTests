@@ -8,7 +8,9 @@ import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -41,6 +43,7 @@ public class ExampleUnitTest {
     final List<String> stringList = Arrays.asList(hi, name, greattins, greattinsNew, greattinsOld);
     final List<String> integerList = Arrays.asList("5", "4", "10");
     final List<Integer> intList = Arrays.asList(5, 4, 11, 2, 8);
+    final List<Integer> emptyList = Collections.emptyList();
 
     private static void log(Object msg) {
         System.out.println(Thread.currentThread().getName() + ": " + msg);
@@ -81,6 +84,18 @@ public class ExampleUnitTest {
             log("Loading ......");
             Thread.sleep(250);
             log("long runnig list operation finished");
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return Arrays.asList(1, 5, 2, 34, 3, 9, 87);
+    }
+
+    private List<Integer> someDataBaseCallThatReturnIntegerList() {
+        try {
+            log("long runnig data base operation started");
+            log("Fetching from database .");
+            Thread.sleep(1500);
+            log("long runnig data base operation finished");
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -2526,5 +2541,99 @@ public class ExampleUnitTest {
     }
 
 
+    /**
+     * For non empty
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testCoditionsWithSwitchIfEmpty() {
+        final Disposable compleated = Observable.fromCallable(this::someLongWebServiceOperationThatReturnIntegerList)
+                .filter(integers -> !integers.isEmpty())
+                .switchIfEmpty(Observable.fromArray(intList))
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()), () -> log("Compleated"));
+        compleated.dispose();
+    }
 
+    /**
+     * For empty
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testCoditionsforEmptyWithSwitchIfEmpty() {
+        final Disposable compleated = Observable.fromCallable(() -> emptyList)
+                .filter(integers -> !integers.isEmpty())
+                .switchIfEmpty(Observable.fromArray(intList))
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()), () -> log("Compleated"));
+        compleated.dispose();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testCoditionsJustWithSwitchIfEmpty() {
+        final Observable<List<Integer>> just = Observable.just(someDataBaseCallThatReturnIntegerList());
+        log("Get data");
+        final Disposable compleated = just
+                .filter(integers -> !integers.isEmpty())
+                .switchIfEmpty(Observable.fromArray(intList))
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()), () -> log("Compleated"));
+        compleated.dispose();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testCoditionsJustLazyWithSwitchIfEmpty() {
+        final Observable<List<Integer>> just = Observable.fromCallable(() -> someDataBaseCallThatReturnIntegerList());
+        log("Get data");
+        final Disposable compleated = just
+                .filter(integers -> !integers.isEmpty())
+                .switchIfEmpty(Observable.fromArray(intList))
+                .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()), () -> log("Compleated"));
+        compleated.dispose();
+    }
+
+    public Observable<String> getFromDatabase() {
+        return Observable.defer(() -> {
+            String object = getSomeObjectFromDatabase();
+            if (object == null) {
+                return Observable.empty();
+            } else {
+                return Observable.just(object);
+            }
+        });
+    }
+
+    /**
+     * This can be some kind of DB call
+     *
+     * @return
+     */
+    private String getSomeObjectFromDatabase() {
+        final int i = new Random().nextInt();
+        return ((i % 2) != 0) ? new String("From DB " + Integer.toString(i)) : null;
+    }
+
+    /**
+     * This is fake WS call
+     * Can be Retrofit call that return Observable<String>
+     *
+     * @return
+     */
+    private Observable<String> getSomeObjectFromWS() {
+        return Observable.just(new String("From WS"));
+    }
+
+    /**
+     * repeat is added just to simulate more result
+     * it's not needed here
+     */
+    @Test
+    public void testSwitchWithObservable() {
+        final Disposable disposable = getFromDatabase()
+                .switchIfEmpty(getSomeObjectFromWS())
+                .repeat(6)
+                .subscribe(s -> log(s),
+                        throwable -> log(throwable.getMessage()),
+                        () -> log("Completed"));
+        disposable.dispose();
+    }
 }
