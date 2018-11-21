@@ -2361,10 +2361,10 @@ public class ExampleUnitTest {
      */
     @Test
     public void testSwitchObservableUsingPublishAndTakeUntil() {
-        Observable<Long> firstObservable = Observable.interval(250, TimeUnit.MILLISECONDS);
-        Observable<Long> secondObservable = Observable.interval(1000, TimeUnit.MILLISECONDS);
-        Disposable disposable = secondObservable
-                .publish(longObservable -> Observable.merge(longObservable, firstObservable.takeUntil(longObservable)))
+        Observable<Long> daoObservable = Observable.interval(250, TimeUnit.MILLISECONDS);
+        Observable<Long> networkObservable = Observable.interval(1000, TimeUnit.MILLISECONDS);
+        Disposable disposable = networkObservable
+                .publish(uniqueNetworkObservable -> Observable.merge(uniqueNetworkObservable, daoObservable.takeUntil(uniqueNetworkObservable)))
 //                .publish(longObservable -> longObservable.mergeWith(firstObservable.takeUntil(longObservable)))//equivalent to above expression
                 .observeOn(Schedulers.newThread())
                 .subscribe(ExampleUnitTest::log, throwable -> log(throwable.getMessage()));
@@ -2506,7 +2506,7 @@ public class ExampleUnitTest {
 
 
     /**
-     * Methode that switch between observables and repeat all sequencw when some external
+     * Method that switch between observables and repeat all sequence when some external
      * condition(for instance key pressed or mouse click) is executed
      * This is advanced use of publish(),takeUntil() and repeatUntil() operators
      */
@@ -2591,7 +2591,7 @@ public class ExampleUnitTest {
         compleated.dispose();
     }
 
-    public Observable<String> getFromDatabase() {
+    private Observable<String> getFromDatabase() {
         return Observable.defer(() -> {
             String object = getSomeObjectFromDatabase();
             if (object == null) {
@@ -2602,25 +2602,10 @@ public class ExampleUnitTest {
         });
     }
 
-    /**
-     * This can be some kind of DB call
-     *
-     * @return
-     */
-    private String getSomeObjectFromDatabase() {
-        final int i = new Random().nextInt();
-        return ((i % 2) != 0) ? new String("From DB " + Integer.toString(i)) : null;
+    private Observable<String> getObjectFromDatabase() {
+        return Observable.just(getSomeObjectFromDatabase());
     }
 
-    /**
-     * This is fake WS call
-     * Can be Retrofit call that return Observable<String>
-     *
-     * @return
-     */
-    private Observable<String> getSomeObjectFromWS() {
-        return Observable.just(new String("From WS"));
-    }
 
     /**
      * repeat is added just to simulate more result
@@ -2635,5 +2620,104 @@ public class ExampleUnitTest {
                         throwable -> log(throwable.getMessage()),
                         () -> log("Completed"));
         disposable.dispose();
+    }
+
+    /**
+     * This can be some kind of DB call
+     *
+     * @return
+     */
+    private String getSomeObjectFromDatabase() {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        final int i = new Random().nextInt();
+        return ((i % 2) != 0) ? new String("From DB " + Integer.toString(i)) : null;
+    }
+
+    /**
+     * This can be some kind of DB call
+     *
+     * @return
+     */
+    private String getDatabaseObject() {
+        try {
+            log("Data base fetching...");
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return "From DB ";
+    }
+
+    /**
+     * This is fake WS call
+     * Can be Retrofit call that return Observable<String>
+     *
+     * @return
+     */
+    private Observable<String> getSomeObjectFromWS() {
+        try {
+            log("Web service downloading...");
+            Thread.sleep(800);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return Observable.just(new String("From WS"));
+    }
+
+    private boolean shouldFetch() {
+        return true;
+    }
+
+    /**
+     * Way to switch observables on some event
+     * In this case start emiting from first and
+     * then when second observable start to emit
+     * stop and dispose first and proceed with second
+     * Suitable difference between above and this implementation
+     * look into test log result
+     */
+    @Test
+    public void testSwitchObservable() {
+        Observable<String> daoObservable = Observable.defer(() -> Observable.just(getDatabaseObject()));
+        Observable<String> networkObservable = Observable.defer(() -> getSomeObjectFromWS());
+        final Observable<String> defaultObservable = Observable.just("default");
+
+        Disposable disposable = networkObservable
+                .startWith(daoObservable.switchIfEmpty(defaultObservable))
+                .take(shouldFetch() ? 2 : 1)
+                .subscribeOn(Schedulers.newThread())
+                .subscribe(s -> log(s),
+                        throwable -> log(throwable.getMessage()));
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+    }
+
+    @Test
+    public void testSwitchObservableEmpty() {
+        Observable<String> daoObservableEmpty = Observable.defer(() -> Observable.empty());
+        Observable<String> networkObservable = Observable.defer(() -> getSomeObjectFromWS());
+        final Observable<String> defaultObservable = Observable.just("default");
+
+        Disposable disposable = networkObservable
+                .startWith(daoObservableEmpty.switchIfEmpty(defaultObservable))
+                .subscribeOn(Schedulers.newThread())
+                .subscribe(s -> log(s),
+                        throwable -> log(throwable.getMessage()));
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
     }
 }
