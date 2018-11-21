@@ -44,6 +44,7 @@ public class ExampleUnitTest {
     final List<String> integerList = Arrays.asList("5", "4", "10");
     final List<Integer> intList = Arrays.asList(5, 4, 11, 2, 8);
     final List<Integer> emptyList = Collections.emptyList();
+    String defaultValue = "default";
 
     private static void log(Object msg) {
         System.out.println(Thread.currentThread().getName() + ": " + msg);
@@ -2684,7 +2685,7 @@ public class ExampleUnitTest {
     public void testSwitchObservable() {
         Observable<String> daoObservable = Observable.defer(() -> Observable.just(getDatabaseObject()));
         Observable<String> networkObservable = Observable.defer(() -> getSomeObjectFromWS());
-        final Observable<String> defaultObservable = Observable.just("default");
+        final Observable<String> defaultObservable = Observable.just(defaultValue);
 
         Disposable disposable = networkObservable
                 .startWith(daoObservable.switchIfEmpty(defaultObservable))
@@ -2705,10 +2706,58 @@ public class ExampleUnitTest {
     public void testSwitchObservableEmpty() {
         Observable<String> daoObservableEmpty = Observable.defer(() -> Observable.empty());
         Observable<String> networkObservable = Observable.defer(() -> getSomeObjectFromWS());
-        final Observable<String> defaultObservable = Observable.just("default");
+        final Observable<String> defaultObservable = Observable.just(defaultValue);
 
         Disposable disposable = networkObservable
-                .startWith(daoObservableEmpty.switchIfEmpty(defaultObservable))
+                .startWith(daoObservableEmpty.switchIfEmpty(defaultObservable).map(s -> {
+                    defaultValue = "New default";
+                    log(defaultValue);
+                    return s;
+                }))
+                .subscribeOn(Schedulers.newThread())
+                .subscribe(s -> log(s),
+                        throwable -> log(throwable.getMessage()));
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+    }
+
+    @Test
+    public void testSwitchObservableOnEmptyFirst() {
+        Observable<String> daoObservableEmpty = Observable.defer(() -> Observable.empty());
+        Observable<String> networkObservable = Observable.defer(() -> getSomeObjectFromWS());
+        final Observable<String> defaultObservable = Observable.just(defaultValue);
+
+        Disposable disposable = networkObservable
+                .startWith(daoObservableEmpty)
+                .subscribeOn(Schedulers.newThread())
+                .subscribe(s -> log(s),
+                        throwable -> log(throwable.getMessage()));
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+    }
+
+    /**
+     * should fetch is true but dao is empty
+     */
+    @Test
+    public void testSwitchObservableOnEmptyFirstEdge() {
+        Observable<String> daoObservableEmpty = Observable.defer(() -> Observable.empty());
+        Observable<String> networkObservable = Observable.defer(() -> getSomeObjectFromWS());
+        final Observable<String> defaultObservable = Observable.just(defaultValue);
+
+        Disposable disposable = networkObservable
+                .startWith(daoObservableEmpty)
+                .take(shouldFetch() ? 2 : 1)
                 .subscribeOn(Schedulers.newThread())
                 .subscribe(s -> log(s),
                         throwable -> log(throwable.getMessage()));
