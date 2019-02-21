@@ -1,5 +1,7 @@
 package com.example.bajob.rxjavatests;
 
+import android.support.v4.util.Pair;
+
 import com.jakewharton.rx.ReplayingShare;
 
 import org.junit.Test;
@@ -36,8 +38,8 @@ import io.reactivex.schedulers.Schedulers;
 public class ExampleUnitTest {
     private final String completed = "Completed";
     String hi = "Hello";
-    String name = "Savo";
-    String greattins = " Greattings";
+    String name = "Lacky";
+    String greattins = "Greattings";
     String greattinsNew = "New Greattings";
     String greattinsOld = "Old Greattings";
     final List<String> stringList = Arrays.asList(hi, name, greattins, greattinsNew, greattinsOld);
@@ -48,6 +50,10 @@ public class ExampleUnitTest {
 
     private static void log(Object msg) {
         System.out.println(Thread.currentThread().getName() + ": " + msg);
+    }
+
+    private static void accept(Throwable throwable) {
+        log(throwable.getMessage());
     }
 
     private <T> void disposeObservable(DisposableObserver<T> disposableObserver) {
@@ -2703,6 +2709,27 @@ public class ExampleUnitTest {
     }
 
     @Test
+    public void testSwitchObservableEmptyDefault() {
+        Observable<String> daoObservable = Observable.defer(() -> Observable.empty());
+        Observable<String> networkObservable = Observable.defer(() -> getSomeObjectFromWS());
+        final Observable<String> defaultObservable = Observable.just(defaultValue);
+
+        Disposable disposable = networkObservable
+                .startWith(daoObservable.switchIfEmpty(defaultObservable))
+                .take(shouldFetch() ? 2 : 1)
+                .subscribeOn(Schedulers.newThread())
+                .subscribe(s -> log(s),
+                        throwable -> log(throwable.getMessage()));
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            disposable.dispose();
+        }
+    }
+
+    @Test
     public void testSwitchObservableEmpty() {
         Observable<String> daoObservableEmpty = Observable.defer(() -> Observable.empty());
         Observable<String> networkObservable = Observable.defer(() -> getSomeObjectFromWS());
@@ -2768,5 +2795,22 @@ public class ExampleUnitTest {
         } finally {
             disposable.dispose();
         }
+    }
+
+    //Scan operator that is used as state manager
+    //this way we can completely avoid using external atomic values
+    //and manage state exclusively inside stream
+    //To do that we mast use scan operator in this variant(scan(initialValue,(accumulator,upstreamEmittedValue)-> do operation and return initial value type))
+    //so we can change resulting emitted item to initial value type
+    @Test
+    public void testScanAsStateOperator() {
+        final Pair<Integer, String> initialValue = new Pair<>(0, "");
+        Disposable disposable = Observable.fromIterable(stringList)
+                .scan(initialValue, (accumulator, emittedString) -> new Pair<>(accumulator.first + 1, emittedString))
+                .skip(1)//probably we need to skip emission of initial value if needed
+                .map(accumulator -> accumulator.second + ": " + accumulator.first)
+                .subscribe(ExampleUnitTest::log,
+                        ExampleUnitTest::accept);
+        disposable.dispose();
     }
 }
